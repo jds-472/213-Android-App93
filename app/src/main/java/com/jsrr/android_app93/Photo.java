@@ -76,31 +76,31 @@ public class Photo implements Serializable {
     public Bitmap getFullImage(Context context) {
         if (fullImage == null || fullImage.isRecycled()) {
             try {
-                if (pathName.startsWith("/drawable/")) {
-                    // Handle drawable resources
-                    String resourceName = pathName.substring("/drawable/".length());
-                    int resourceId = context.getResources().getIdentifier(
-                            resourceName, "drawable", context.getPackageName());
-                    if (resourceId != 0) {
-                        fullImage = BitmapFactory.decodeResource(context.getResources(), resourceId);
-                    } else {
-                        Log.e(TAG, "Resource not found: " + resourceName);
-                    }
-                } else {
-                    // Try to load from path as URI
-                    Uri uri = Uri.parse(pathName);
-                    fullImage = BitmapFactory.decodeStream(context.getContentResolver().openInputStream(uri));
+                // Try first as a resource ID
+                int resourceId = Integer.parseInt(pathName);
+                fullImage = BitmapFactory.decodeResource(context.getResources(), resourceId);
+                if (fullImage == null) {
+                    Log.e(TAG, "Failed to decode resource with ID: " + resourceId);
                 }
-            } catch (FileNotFoundException | SecurityException | IllegalArgumentException e) {
-                Log.e(TAG, "Error loading image: " + e.getMessage());
-                // If we're using default resources, we might be using resource IDs
+            } catch (NumberFormatException nfe) {
+                // Not a resource ID, try URI or drawable path
                 try {
-                    // Try to parse as resource ID
-                    int resourceId = Integer.parseInt(pathName);
-                    fullImage = BitmapFactory.decodeResource(context.getResources(), resourceId);
-                } catch (NumberFormatException nfe) {
-                    Log.e(TAG, "Path is neither a valid URI nor a resource ID: " + nfe.getMessage());
-                    return null;
+                    if (pathName.startsWith("/drawable/")) {
+                        String resourceName = pathName.substring("/drawable/".length());
+                        int resourceId = context.getResources().getIdentifier(
+                                resourceName, "drawable", context.getPackageName());
+                        if (resourceId != 0) {
+                            fullImage = BitmapFactory.decodeResource(context.getResources(), resourceId);
+                        } else {
+                            Log.e(TAG, "Resource not found: " + resourceName);
+                        }
+                    } else {
+                        // Try as URI
+                        Uri uri = Uri.parse(pathName);
+                        fullImage = BitmapFactory.decodeStream(context.getContentResolver().openInputStream(uri));
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Error loading image: " + e.getMessage(), e);
                 }
             }
         }

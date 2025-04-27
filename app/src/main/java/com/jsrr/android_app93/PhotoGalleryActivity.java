@@ -1,5 +1,6 @@
 package com.jsrr.android_app93;
 
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
@@ -7,7 +8,10 @@ import android.view.LayoutInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
+import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -19,6 +23,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 public class PhotoGalleryActivity extends AppCompatActivity {
 
@@ -27,6 +32,9 @@ public class PhotoGalleryActivity extends AppCompatActivity {
     private PhotoAdapter photoAdapter;
     private List<Photo> photoList;
     private String albumName;
+    private Album currentAlbum;
+    private Button movePhotoButton; // New button
+    private int selectedPhotoPosition = -1; // To track selected photo
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -35,6 +43,14 @@ public class PhotoGalleryActivity extends AppCompatActivity {
 
         // Get album name from intent
         albumName = getIntent().getStringExtra("ALBUM_NAME");
+
+        // Get the current album from Data
+        currentAlbum = Data.getCurrentAlbum();
+
+        // If no album is set in Data, try to find it by name
+        if (currentAlbum == null && albumName != null) {
+            currentAlbum = Data.getAlbum(albumName);
+        }
 
         // Set title to album name
         if (albumName != null && !albumName.isEmpty()) {
@@ -50,15 +66,111 @@ public class PhotoGalleryActivity extends AppCompatActivity {
         photoRecyclerView = findViewById(R.id.photo_recycler_view);
         photoRecyclerView.setLayoutManager(new GridLayoutManager(this, 2)); // 2 columns
 
-        // Initialize photo list with default data
-        initializeDefaultPhotos();
+        // Check if the album has photos, if not initialize with defaults
+        if (currentAlbum != null && currentAlbum.getPhotos().size() > 0) {
+            photoList = new ArrayList<>(currentAlbum.getPhotos());
+        } else {
+            initializeDefaultPhotos();
+        }
 
         // Set up the adapter
         photoAdapter = new PhotoAdapter(photoList);
         photoRecyclerView.setAdapter(photoAdapter);
 
+        // Initialize and set up move photo button
+        movePhotoButton = findViewById(R.id.move_photo_button);
+        movePhotoButton.setOnClickListener(v -> {
+            if (selectedPhotoPosition == -1) {
+                Toast.makeText(this, "Please select a photo first", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            showMovePhotoDialog();
+        });
+
         // Log that we've set up the recycler view
         Log.d(TAG, "RecyclerView initialized with " + photoList.size() + " photos");
+    }
+
+    /**
+     * Shows a dialog to select the destination album for moving a photo
+     */
+    private void showMovePhotoDialog() {
+        // Get the list of all albums
+        Set<Album> allAlbums = Data.getAlbums();
+
+        // Create a list of albums excluding the current one
+        List<Album> availableAlbums = new ArrayList<>();
+        for (Album album : allAlbums) {
+            // Only add albums that aren't the current album
+            if (!album.equals(currentAlbum)) {
+                availableAlbums.add(album);
+            }
+        }
+
+        // Check if there are other albums to move to
+        if (availableAlbums.isEmpty()) {
+            Toast.makeText(this, "No other albums available to move to", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Create an array of album names for display
+        final String[] albumNames = new String[availableAlbums.size()];
+        for (int i = 0; i < availableAlbums.size(); i++) {
+            albumNames[i] = availableAlbums.get(i).getName();
+        }
+
+        // Create and show the dialog
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Move Photo to Album")
+                .setSingleChoiceItems(albumNames, -1, null)
+                .setPositiveButton("Move", (dialog, which) -> {
+                    // Get the selected position from the ListView
+                    ListView listView = ((AlertDialog) dialog).getListView();
+                    int selectedAlbumPosition = listView.getCheckedItemPosition();
+
+                    // Check if an album was selected
+                    if (selectedAlbumPosition != AdapterView.INVALID_POSITION) {
+                        // Get the selected photo and destination album
+                        Photo photoToMove = photoList.get(selectedPhotoPosition);
+                        Album destinationAlbum = availableAlbums.get(selectedAlbumPosition);
+
+                        // Move the photo between albums
+                        movePhotoToAlbum(photoToMove, currentAlbum, destinationAlbum);
+
+                        // Remove the photo from the current display list and notify adapter
+                        photoList.remove(selectedPhotoPosition);
+                        photoAdapter.notifyItemRemoved(selectedPhotoPosition);
+
+                        // Reset selection
+                        selectedPhotoPosition = -1;
+
+                        // Show confirmation
+                        Toast.makeText(this, "Photo moved to " + destinationAlbum.getName(),
+                                Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(this, "No album selected", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null);
+
+        builder.create().show();
+    }
+
+    /**
+     * Moves a photo from one album to another
+     * @param photo The photo to move
+     * @param sourceAlbum The source album to remove from
+     * @param destinationAlbum The destination album to add to
+     */
+    private void movePhotoToAlbum(Photo photo, Album sourceAlbum, Album destinationAlbum) {
+        // Remove from source album
+        sourceAlbum.removePhoto(photo);
+
+        // Add to destination album
+        destinationAlbum.addPhoto(photo);
+
+        // Save the changes
+        Data.saveData(this);
     }
 
     @Override
@@ -74,11 +186,11 @@ public class PhotoGalleryActivity extends AppCompatActivity {
         photoList = new ArrayList<>();
 
         // Add default photos with proper drawable paths
-        photoList.add(new Photo("Pac-Man", "/drawable/pacmanstock"));
-        photoList.add(new Photo("Blinky", "/drawable/blinkystock"));
-        photoList.add(new Photo("Pinky", "/drawable/pinkystock"));
-        photoList.add(new Photo("Inky", "/drawable/inkystock"));
-        photoList.add(new Photo("Clyde", "/drawable/clydestock"));
+        photoList.add(new Photo("Pac-Man", String.valueOf(R.drawable.pacmanstock)));
+        photoList.add(new Photo("Blinky", String.valueOf(R.drawable.blinkystock)));
+        photoList.add(new Photo("Pinky", String.valueOf(R.drawable.pinkystock)));
+        photoList.add(new Photo("Inky", String.valueOf(R.drawable.inkystock)));
+        photoList.add(new Photo("Clyde", String.valueOf(R.drawable.clydestock)));
 
         // Add some sample tags to demonstrate tag functionality
         Photo pacman = photoList.get(0);
@@ -89,8 +201,22 @@ public class PhotoGalleryActivity extends AppCompatActivity {
         blinky.addTag(new Tag("Person", "Ghost"));
         blinky.addTag(new Tag("Location", "Maze"));
 
+        // If we have a valid album, add the photos to it
+        if (currentAlbum != null) {
+            for (Photo photo : photoList) {
+                currentAlbum.addPhoto(photo);
+            }
+        }
+
         // Verify the photos were added
         Log.d(TAG, "Added " + photoList.size() + " default photos");
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Save data when activity is paused
+        Data.saveData(this);
     }
 
     @Override
@@ -139,8 +265,28 @@ public class PhotoGalleryActivity extends AppCompatActivity {
                 holder.photoImageView.setImageResource(android.R.drawable.ic_menu_gallery);
             }
 
-            // Launch PhotoDetailActivity when a photo is clicked
+            // Set background color based on selection state
+            if (position == selectedPhotoPosition) {
+                holder.itemView.setBackgroundColor(getResources().getColor(android.R.color.holo_blue_light));
+            } else {
+                holder.itemView.setBackgroundColor(getResources().getColor(android.R.color.transparent));
+            }
+
+            // Handle long click for selection for move functionality
+            holder.itemView.setOnLongClickListener(v -> {
+                selectedPhotoPosition = position;
+                photoAdapter.notifyDataSetChanged(); // Update all items to refresh the selected state
+                Toast.makeText(PhotoGalleryActivity.this,
+                        "Selected " + photo.getCaption() + " for move",
+                        Toast.LENGTH_SHORT).show();
+                return true;
+            });
+
+            // Launch PhotoDetailActivity when a photo is clicked normally
             holder.itemView.setOnClickListener(v -> {
+                // Set the current photo in Data before opening details
+                Data.setCurrentPhoto(photo);
+
                 Intent intent = new Intent(PhotoGalleryActivity.this, PhotoDetailActivity.class);
                 intent.putExtra("PHOTO_LIST", (Serializable) photos);
                 intent.putExtra("PHOTO_INDEX", position);

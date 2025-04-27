@@ -1,11 +1,18 @@
 package com.jsrr.android_app93;
 
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.ListView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -21,6 +28,9 @@ public class MainActivity extends AppCompatActivity {
     private RecyclerView albumRecyclerView;
     private AlbumAdapter albumAdapter;
     private List<Album> albumList;
+    private Button createAlbumButton;
+    private Button deleteAlbumButton;
+    private Button renameAlbumButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -31,9 +41,28 @@ public class MainActivity extends AppCompatActivity {
         albumRecyclerView = findViewById(R.id.album_recycler_view);
         albumRecyclerView.setLayoutManager(new LinearLayoutManager(this));
 
-        // Initialize album list with default data
-        initializeDefaultAlbums();
+        // Initialize buttons
+        createAlbumButton = findViewById(R.id.create_album_button);
+        deleteAlbumButton = findViewById(R.id.delete_album_button);
+        renameAlbumButton = findViewById(R.id.rename_album_button);
 
+        // Set up button click listeners
+        createAlbumButton.setOnClickListener(v -> showCreateAlbumDialog());
+        deleteAlbumButton.setOnClickListener(v -> showDeleteAlbumDialog());
+        renameAlbumButton.setOnClickListener(v -> showRenameAlbumDialog());
+
+        // Load data or initialize default albums if none exist
+        Data.loadData(this);
+        if (Data.getAlbums().isEmpty()) {
+            initializeDefaultAlbums();
+        }
+
+        // Convert Set to List for the adapter
+        refreshAlbumList();
+    }
+
+    private void refreshAlbumList() {
+        albumList = new ArrayList<>(Data.getAlbums());
         // Set up the adapter
         albumAdapter = new AlbumAdapter(albumList);
         albumRecyclerView.setAdapter(albumAdapter);
@@ -41,7 +70,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void initializeDefaultAlbums() {
         // Create default album list
-        albumList = new ArrayList<>(Arrays.asList(
+        List<Album> defaultAlbums = new ArrayList<>(Arrays.asList(
                 new Album("The Dark Side of the Moon"),
                 new Album("Abbey Road"),
                 new Album("Thriller"),
@@ -53,24 +82,201 @@ public class MainActivity extends AppCompatActivity {
                 new Album("Purple Rain"),
                 new Album("Random Access Memories")
         ));
+
+        // Add all default albums to Data
+        for (Album album : defaultAlbums) {
+            Data.addAlbum(album);
+        }
     }
 
-    // Album data class
-//    public static class Album {
-//        private String name;
-//
-//        public Album(String name) {
-//            this.name = name;
-//        }
-//
-//        public String getName() {
-//            return name;
-//        }
-//
-//        public void setName(String name) {
-//            this.name = name;
-//        }
-//    }
+    private void showCreateAlbumDialog() {
+        // Inflate the dialog layout
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_create_album, null);
+        EditText albumNameEditText = dialogView.findViewById(R.id.album_name_edit_text);
+
+        // Create and show the dialog
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Create New Album")
+                .setView(dialogView)
+                .setPositiveButton("Create", (dialogInterface, i) -> {
+                    // Get the entered album name
+                    String albumName = albumNameEditText.getText().toString().trim();
+
+                    // Validate input
+                    if (albumName.isEmpty()) {
+                        Toast.makeText(this, "Album name cannot be empty", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    // Check if an album with this name already exists
+                    if (Data.getAlbum(albumName) != null) {
+                        Toast.makeText(this, "An album with this name already exists", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    // Create and add the new album
+                    Album newAlbum = new Album(albumName);
+                    Data.addAlbum(newAlbum);
+
+                    // Update the display and save data
+                    refreshAlbumList();
+                    Data.saveData(this);
+                    Toast.makeText(this, "Album created", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cancel", null)
+                .create();
+
+        dialog.show();
+    }
+
+    private void showDeleteAlbumDialog() {
+        // Check if there are any albums to delete
+        if (albumList.isEmpty()) {
+            Toast.makeText(this, "No albums to delete", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Create an array of album names for display
+        final String[] albumNames = new String[albumList.size()];
+        for (int i = 0; i < albumList.size(); i++) {
+            albumNames[i] = albumList.get(i).getName();
+        }
+
+        // Create and show the album selection dialog
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Select Album to Delete")
+                .setSingleChoiceItems(albumNames, -1, null)
+                .setPositiveButton("Next", (dialog, which) -> {
+                    // Get the selected position from the ListView
+                    ListView listView = ((AlertDialog) dialog).getListView();
+                    int selectedPosition = listView.getCheckedItemPosition();
+
+                    // Check if an album was selected
+                    if (selectedPosition != AdapterView.INVALID_POSITION) {
+                        // Show confirmation dialog for the selected album
+                        showDeleteConfirmationDialog(albumList.get(selectedPosition));
+                    } else {
+                        Toast.makeText(this, "No album selected", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null);
+
+        builder.create().show();
+    }
+
+    private void showDeleteConfirmationDialog(Album albumToDelete) {
+        new AlertDialog.Builder(this)
+                .setTitle("Confirm Delete")
+                .setMessage("Are you sure you want to delete the album '" + albumToDelete.getName() + "'?")
+                .setPositiveButton("Delete", (dialog, which) -> {
+                    // Remove the album
+                    Data.removeAlbum(albumToDelete);
+
+                    // Update the display and save data
+                    refreshAlbumList();
+                    Data.saveData(this);
+                    Toast.makeText(this, "Album deleted", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cancel", null)
+                .create().show();
+    }
+
+    private void showRenameAlbumDialog() {
+        // Check if there are any albums to rename
+        if (albumList.isEmpty()) {
+            Toast.makeText(this, "No albums to rename", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Create an array of album names for display
+        final String[] albumNames = new String[albumList.size()];
+        for (int i = 0; i < albumList.size(); i++) {
+            albumNames[i] = albumList.get(i).getName();
+        }
+
+        // Create and show the album selection dialog
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Select Album to Rename")
+                .setSingleChoiceItems(albumNames, -1, null)
+                .setPositiveButton("Next", (dialog, which) -> {
+                    // Get the selected position from the ListView
+                    ListView listView = ((AlertDialog) dialog).getListView();
+                    int selectedPosition = listView.getCheckedItemPosition();
+
+                    // Check if an album was selected
+                    if (selectedPosition != AdapterView.INVALID_POSITION) {
+                        // Show rename dialog for the selected album
+                        showRenameInputDialog(albumList.get(selectedPosition));
+                    } else {
+                        Toast.makeText(this, "No album selected", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null);
+
+        builder.create().show();
+    }
+
+    private void showRenameInputDialog(Album albumToRename) {
+        // Inflate the dialog layout
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_rename_album, null);
+        EditText newNameEditText = dialogView.findViewById(R.id.new_album_name_edit_text);
+
+        // Pre-fill with current name
+        newNameEditText.setText(albumToRename.getName());
+        newNameEditText.setSelection(newNameEditText.getText().length());
+
+        // Create and show the dialog
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Rename Album")
+                .setView(dialogView)
+                .setPositiveButton("Rename", (dialogInterface, i) -> {
+                    // Get the entered new name
+                    String newName = newNameEditText.getText().toString().trim();
+
+                    // Validate input
+                    if (newName.isEmpty()) {
+                        Toast.makeText(this, "Album name cannot be empty", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    // Check if the name is unchanged
+                    if (newName.equals(albumToRename.getName())) {
+                        return;
+                    }
+
+                    // Check if an album with this name already exists
+                    if (Data.getAlbum(newName) != null) {
+                        Toast.makeText(this, "An album with this name already exists", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    // Rename the album
+                    albumToRename.setName(newName);
+
+                    // Update the display and save data
+                    refreshAlbumList();
+                    Data.saveData(this);
+                    Toast.makeText(this, "Album renamed", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cancel", null)
+                .create();
+
+        dialog.show();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Refresh album list when returning to MainActivity
+        refreshAlbumList();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Save data when app is paused
+        Data.saveData(this);
+    }
 
     // RecyclerView Adapter for Albums
     private class AlbumAdapter extends RecyclerView.Adapter<AlbumAdapter.AlbumViewHolder> {
@@ -96,6 +302,9 @@ public class MainActivity extends AppCompatActivity {
 
             // Set click listener to open the gallery
             holder.itemView.setOnClickListener(view -> {
+                // Set the current album in Data before opening the gallery
+                Data.setCurrentAlbum(album);
+
                 Intent intent = new Intent(MainActivity.this, PhotoGalleryActivity.class);
                 intent.putExtra("ALBUM_NAME", album.getName());
                 startActivity(intent);

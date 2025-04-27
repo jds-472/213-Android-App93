@@ -38,6 +38,7 @@ public class PhotoDetailActivity extends AppCompatActivity {
 
     private List<Photo> photoList;
     private int currentPhotoIndex;
+    private Photo currentPhoto;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,11 +66,28 @@ public class PhotoDetailActivity extends AppCompatActivity {
         photoList = (ArrayList<Photo>) getIntent().getSerializableExtra("PHOTO_LIST");
         currentPhotoIndex = getIntent().getIntExtra("PHOTO_INDEX", 0);
 
+        // Try to get the current photo from Data if intent doesn't have valid data
         if (photoList == null || photoList.isEmpty()) {
-            Log.e(TAG, "No photos provided to PhotoDetailActivity");
-            Toast.makeText(this, "Error loading photo", Toast.LENGTH_SHORT).show();
-            finish();
-            return;
+            currentPhoto = Data.getCurrentPhoto();
+            if (currentPhoto == null) {
+                Log.e(TAG, "No photos provided to PhotoDetailActivity");
+                Toast.makeText(this, "Error loading photo", Toast.LENGTH_SHORT).show();
+                finish();
+                return;
+            }
+
+            // If we have a valid album, get its photos
+            Album currentAlbum = Data.getCurrentAlbum();
+            if (currentAlbum != null) {
+                photoList = new ArrayList<>(currentAlbum.getPhotos());
+                currentPhotoIndex = photoList.indexOf(currentPhoto);
+                if (currentPhotoIndex < 0) currentPhotoIndex = 0;
+            } else {
+                // Create a single-photo list if we have no album
+                photoList = new ArrayList<>();
+                photoList.add(currentPhoto);
+                currentPhotoIndex = 0;
+            }
         }
 
         // Display the current photo
@@ -81,6 +99,9 @@ public class PhotoDetailActivity extends AppCompatActivity {
 
     private void displayCurrentPhoto() {
         Photo currentPhoto = photoList.get(currentPhotoIndex);
+
+        // Update the current photo in Data
+        Data.setCurrentPhoto(currentPhoto);
 
         // Set photo caption
         captionTextView.setText(currentPhoto.getCaption());
@@ -166,8 +187,21 @@ public class PhotoDetailActivity extends AppCompatActivity {
                     Photo currentPhoto = photoList.get(currentPhotoIndex);
                     currentPhoto.addTag(newTag);
 
-                    // Update the display
+                    // Make sure the same photo in the album is updated
+                    Album currentAlbum = Data.getCurrentAlbum();
+                    if (currentAlbum != null) {
+                        // Find the photo in the album and update it if necessary
+                        for (Photo albumPhoto : currentAlbum.getPhotos()) {
+                            if (albumPhoto.equals(currentPhoto)) {
+                                albumPhoto.addTag(newTag);
+                                break;
+                            }
+                        }
+                    }
+
+                    // Update the display and save data
                     updateTagsList();
+                    Data.saveData(this);
                     Toast.makeText(this, "Tag added", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("Cancel", null)
@@ -207,8 +241,21 @@ public class PhotoDetailActivity extends AppCompatActivity {
                         Tag tagToRemove = tagList.get(selectedPosition);
                         currentPhoto.removeTag(tagToRemove);
 
-                        // Update the display
+                        // Make sure the same photo in the album is updated
+                        Album currentAlbum = Data.getCurrentAlbum();
+                        if (currentAlbum != null) {
+                            // Find the photo in the album and update it if necessary
+                            for (Photo albumPhoto : currentAlbum.getPhotos()) {
+                                if (albumPhoto.equals(currentPhoto)) {
+                                    albumPhoto.removeTag(tagToRemove);
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Update the display and save data
                         updateTagsList();
+                        Data.saveData(this);
                         Toast.makeText(this, "Tag removed", Toast.LENGTH_SHORT).show();
                     } else {
                         Toast.makeText(this, "No tag selected", Toast.LENGTH_SHORT).show();
@@ -226,6 +273,13 @@ public class PhotoDetailActivity extends AppCompatActivity {
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Save data when activity is paused
+        Data.saveData(this);
     }
 
     // Adapter for the Tags RecyclerView

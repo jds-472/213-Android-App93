@@ -34,8 +34,6 @@ public class PhotoGalleryActivity extends AppCompatActivity {
     private List<Photo> photoList;
     private String albumName;
     private Album currentAlbum;
-    private Button movePhotoButton; // This will eventually be removed
-    private int selectedPhotoPosition = -1; // To track selected photo
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -78,16 +76,6 @@ public class PhotoGalleryActivity extends AppCompatActivity {
         photoAdapter = new PhotoAdapter(photoList);
         photoRecyclerView.setAdapter(photoAdapter);
 
-        // Initialize and set up move photo button (can be removed later once in-item buttons are working)
-        movePhotoButton = findViewById(R.id.move_photo_button);
-        movePhotoButton.setOnClickListener(v -> {
-            if (selectedPhotoPosition == -1) {
-                Toast.makeText(this, "Please select a photo first", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            showMovePhotoDialog();
-        });
-
         // Log that we've set up the recycler view
         Log.d(TAG, "RecyclerView initialized with " + photoList.size() + " photos");
     }
@@ -95,7 +83,7 @@ public class PhotoGalleryActivity extends AppCompatActivity {
     /**
      * Shows a dialog to select the destination album for moving a photo
      */
-    private void showMovePhotoDialog() {
+    private void showMovePhotoDialog(int photoPosition) {
         // Get the list of all albums directly from Data to ensure freshness
         Set<Album> allAlbums = Data.getAlbums();
         Log.d(TAG, "Moving photo. Total albums: " + allAlbums.size());
@@ -135,7 +123,7 @@ public class PhotoGalleryActivity extends AppCompatActivity {
                     // Check if an album was selected
                     if (selectedAlbumPosition != AdapterView.INVALID_POSITION) {
                         // Get the selected photo and destination album
-                        Photo photoToMove = photoList.get(selectedPhotoPosition);
+                        Photo photoToMove = photoList.get(photoPosition);
                         Album destinationAlbum = availableAlbums.get(selectedAlbumPosition);
 
                         Log.d(TAG, "Selected photo: " + photoToMove.getCaption());
@@ -148,15 +136,31 @@ public class PhotoGalleryActivity extends AppCompatActivity {
                             Log.d(TAG, "Using fresh destination album reference");
                         }
 
+                        // Check if the destination album already contains the photo
+                        boolean isDuplicate = false;
+                        for (Photo existingPhoto : destinationAlbum.getPhotos()) {
+                            if (existingPhoto.equals(photoToMove)) {
+                                isDuplicate = true;
+                                break;
+                            }
+                        }
+
+                        if (isDuplicate) {
+                            // Alert the user that the photo already exists in the destination album
+                            Toast.makeText(this, "Photo already exists in " +
+                                            destinationAlbum.getName() + ". Move cancelled.",
+                                    Toast.LENGTH_LONG).show();
+                            return;
+                        }
+
                         // Move the photo between albums
                         movePhotoToAlbum(photoToMove, currentAlbum, destinationAlbum);
 
                         // Remove the photo from the current display list and notify adapter
-                        photoList.remove(selectedPhotoPosition);
-                        photoAdapter.notifyItemRemoved(selectedPhotoPosition);
+                        photoList.remove(photoPosition);
+                        photoAdapter.notifyItemRemoved(photoPosition);
 
-                        // Reset selection and expanded state
-                        selectedPhotoPosition = -1;
+                        // Reset expanded state
                         photoAdapter.expandedPosition = -1;
 
                         // Show confirmation
@@ -169,6 +173,61 @@ public class PhotoGalleryActivity extends AppCompatActivity {
                 .setNegativeButton("Cancel", null);
 
         builder.create().show();
+    }
+
+    /**
+     * Shows a confirmation dialog for deleting a photo
+     */
+    private void showDeletePhotoDialog(int photoPosition) {
+        Photo photoToDelete = photoList.get(photoPosition);
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Delete Photo")
+                .setMessage("Are you sure you want to delete the photo \"" + photoToDelete.getCaption() + "\"?")
+                .setPositiveButton("Delete", (dialog, which) -> {
+                    // Delete the photo from the album and update the display
+                    deletePhoto(photoPosition);
+                })
+                .setNegativeButton("Cancel", null);
+
+        builder.create().show();
+    }
+
+    /**
+     * Deletes a photo from the current album
+     * @param photoPosition The position of the photo to delete
+     */
+    private void deletePhoto(int photoPosition) {
+        if (photoPosition < 0 || photoPosition >= photoList.size()) {
+            Log.e(TAG, "Invalid photo position: " + photoPosition);
+            return;
+        }
+
+        Photo photoToDelete = photoList.get(photoPosition);
+
+        // Remove photo from current album
+        if (currentAlbum != null) {
+            currentAlbum.removePhoto(photoToDelete);
+            Log.d(TAG, "Removed photo " + photoToDelete.getCaption() + " from album " + currentAlbum.getName());
+        }
+
+        // Remove photo from the list and update adapter
+        photoList.remove(photoPosition);
+        photoAdapter.notifyItemRemoved(photoPosition);
+
+        // Reset expanded position if necessary
+        if (photoAdapter.expandedPosition == photoPosition) {
+            photoAdapter.expandedPosition = -1;
+        } else if (photoAdapter.expandedPosition > photoPosition) {
+            // Adjust expanded position if it was after the deleted item
+            photoAdapter.expandedPosition--;
+        }
+
+        // Save changes
+        Data.saveData(this);
+
+        // Show confirmation
+        Toast.makeText(this, "Photo deleted", Toast.LENGTH_SHORT).show();
     }
 
     /**
@@ -316,13 +375,6 @@ public class PhotoGalleryActivity extends AppCompatActivity {
             boolean isExpanded = position == expandedPosition;
             holder.actionButtonsLayout.setVisibility(isExpanded ? View.VISIBLE : View.GONE);
 
-            // Check if this item is selected
-            if (position == selectedPhotoPosition) {
-                holder.itemView.setBackgroundColor(getResources().getColor(android.R.color.holo_blue_light));
-            } else {
-                holder.itemView.setBackgroundColor(getResources().getColor(android.R.color.transparent));
-            }
-
             // Set click listener to show/hide the action buttons
             holder.itemView.setOnClickListener(v -> {
                 // Set the current photo in Data
@@ -339,16 +391,6 @@ public class PhotoGalleryActivity extends AppCompatActivity {
                 notifyItemChanged(position);
             });
 
-            // Set long click behavior (can be used for selection for other features)
-            holder.itemView.setOnLongClickListener(v -> {
-                selectedPhotoPosition = position;
-                notifyDataSetChanged(); // Update all items to refresh the selected state
-                Toast.makeText(PhotoGalleryActivity.this,
-                        "Selected " + photo.getCaption(),
-                        Toast.LENGTH_SHORT).show();
-                return true;
-            });
-
             // Set up action buttons
             holder.displayButton.setOnClickListener(v -> {
                 // Launch PhotoDetailActivity
@@ -359,9 +401,13 @@ public class PhotoGalleryActivity extends AppCompatActivity {
             });
 
             holder.moveButton.setOnClickListener(v -> {
-                // Set the selected position and show the move dialog
-                selectedPhotoPosition = position;
-                showMovePhotoDialog();
+                // Show the move dialog
+                showMovePhotoDialog(position);
+            });
+
+            holder.deleteButton.setOnClickListener(v -> {
+                // Show the delete confirmation dialog
+                showDeletePhotoDialog(position);
             });
         }
 
@@ -383,6 +429,7 @@ public class PhotoGalleryActivity extends AppCompatActivity {
             LinearLayout actionButtonsLayout;
             Button displayButton;
             Button moveButton;
+            Button deleteButton;
 
             public PhotoViewHolder(@NonNull View itemView) {
                 super(itemView);
@@ -391,6 +438,7 @@ public class PhotoGalleryActivity extends AppCompatActivity {
                 actionButtonsLayout = itemView.findViewById(R.id.action_buttons_layout);
                 displayButton = itemView.findViewById(R.id.display_button);
                 moveButton = itemView.findViewById(R.id.move_button);
+                deleteButton = itemView.findViewById(R.id.delete_button);
             }
         }
     }

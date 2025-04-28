@@ -109,4 +109,28 @@ public class Album implements Serializable {
     public void removePhoto(Photo photo) {
         photos.remove(photo);
     }
+
+
+    /**
+     * Checks if two albums are equal based on their names.
+     *
+     * @param obj the object to compare with
+     * @return true if the albums are equal, false otherwise
+     */
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (obj == null || getClass() != obj.getClass()) return false;
+        Album album = (Album) obj;
+        return name.equals(album.name);
+    }
+
+    /**
+     * Returns the hash code value for this album.
+     * @return the hash code value for this album
+     */
+    @Override
+    public int hashCode() {
+        return name.hashCode();
+    }
 }

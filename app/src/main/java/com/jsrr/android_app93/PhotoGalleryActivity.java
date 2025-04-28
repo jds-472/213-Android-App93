@@ -11,6 +11,7 @@ import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -33,7 +34,7 @@ public class PhotoGalleryActivity extends AppCompatActivity {
     private List<Photo> photoList;
     private String albumName;
     private Album currentAlbum;
-    private Button movePhotoButton; // New button
+    private Button movePhotoButton; // This will eventually be removed
     private int selectedPhotoPosition = -1; // To track selected photo
 
     @Override
@@ -77,7 +78,7 @@ public class PhotoGalleryActivity extends AppCompatActivity {
         photoAdapter = new PhotoAdapter(photoList);
         photoRecyclerView.setAdapter(photoAdapter);
 
-        // Initialize and set up move photo button
+        // Initialize and set up move photo button (can be removed later once in-item buttons are working)
         movePhotoButton = findViewById(R.id.move_photo_button);
         movePhotoButton.setOnClickListener(v -> {
             if (selectedPhotoPosition == -1) {
@@ -95,15 +96,18 @@ public class PhotoGalleryActivity extends AppCompatActivity {
      * Shows a dialog to select the destination album for moving a photo
      */
     private void showMovePhotoDialog() {
-        // Get the list of all albums
+        // Get the list of all albums directly from Data to ensure freshness
         Set<Album> allAlbums = Data.getAlbums();
+        Log.d(TAG, "Moving photo. Total albums: " + allAlbums.size());
 
         // Create a list of albums excluding the current one
         List<Album> availableAlbums = new ArrayList<>();
         for (Album album : allAlbums) {
             // Only add albums that aren't the current album
-            if (!album.equals(currentAlbum)) {
+            if (!album.getName().equals(currentAlbum.getName())) {
                 availableAlbums.add(album);
+                Log.d(TAG, "Available destination album: " + album.getName() +
+                        " with " + album.getPhotos().size() + " photos");
             }
         }
 
@@ -134,6 +138,16 @@ public class PhotoGalleryActivity extends AppCompatActivity {
                         Photo photoToMove = photoList.get(selectedPhotoPosition);
                         Album destinationAlbum = availableAlbums.get(selectedAlbumPosition);
 
+                        Log.d(TAG, "Selected photo: " + photoToMove.getCaption());
+                        Log.d(TAG, "Destination album: " + destinationAlbum.getName());
+
+                        // Ensure we have the latest reference to the destination album
+                        Album freshDestinationAlbum = Data.getAlbum(destinationAlbum.getName());
+                        if (freshDestinationAlbum != null) {
+                            destinationAlbum = freshDestinationAlbum;
+                            Log.d(TAG, "Using fresh destination album reference");
+                        }
+
                         // Move the photo between albums
                         movePhotoToAlbum(photoToMove, currentAlbum, destinationAlbum);
 
@@ -141,8 +155,9 @@ public class PhotoGalleryActivity extends AppCompatActivity {
                         photoList.remove(selectedPhotoPosition);
                         photoAdapter.notifyItemRemoved(selectedPhotoPosition);
 
-                        // Reset selection
+                        // Reset selection and expanded state
                         selectedPhotoPosition = -1;
+                        photoAdapter.expandedPosition = -1;
 
                         // Show confirmation
                         Toast.makeText(this, "Photo moved to " + destinationAlbum.getName(),
@@ -168,6 +183,37 @@ public class PhotoGalleryActivity extends AppCompatActivity {
 
         // Add to destination album
         destinationAlbum.addPhoto(photo);
+
+        // Log the operation for debugging
+        Log.d(TAG, "Moving photo: " + photo.getCaption());
+        Log.d(TAG, "From album: " + sourceAlbum.getName() + " (now has " +
+                sourceAlbum.getPhotos().size() + " photos)");
+        Log.d(TAG, "To album: " + destinationAlbum.getName() + " (now has " +
+                destinationAlbum.getPhotos().size() + " photos)");
+
+        // Verify the move operation
+        boolean sourceContains = sourceAlbum.getPhotos().contains(photo);
+        boolean destContains = destinationAlbum.getPhotos().contains(photo);
+        Log.d(TAG, "Source still contains photo: " + sourceContains);
+        Log.d(TAG, "Destination contains photo: " + destContains);
+
+        // Make sure changes are reflected in Data's albums collection
+        Set<Album> allAlbums = Data.getAlbums();
+        for (Album album : allAlbums) {
+            if (album.getName().equals(sourceAlbum.getName())) {
+                // Make sure the source album in Data's collection is updated
+                if (album != sourceAlbum) {
+                    album.removePhoto(photo);
+                    Log.d(TAG, "Updated source album in Data's collection");
+                }
+            } else if (album.getName().equals(destinationAlbum.getName())) {
+                // Make sure the destination album in Data's collection is updated
+                if (album != destinationAlbum) {
+                    album.addPhoto(photo);
+                    Log.d(TAG, "Updated destination album in Data's collection");
+                }
+            }
+        }
 
         // Save the changes
         Data.saveData(this);
@@ -234,6 +280,7 @@ public class PhotoGalleryActivity extends AppCompatActivity {
     private class PhotoAdapter extends RecyclerView.Adapter<PhotoAdapter.PhotoViewHolder> {
 
         private List<Photo> photos;
+        private int expandedPosition = -1; // Track which item has expanded menu
 
         public PhotoAdapter(List<Photo> photos) {
             this.photos = photos;
@@ -265,32 +312,56 @@ public class PhotoGalleryActivity extends AppCompatActivity {
                 holder.photoImageView.setImageResource(android.R.drawable.ic_menu_gallery);
             }
 
-            // Set background color based on selection state
+            // Handle expanded state (show/hide action buttons)
+            boolean isExpanded = position == expandedPosition;
+            holder.actionButtonsLayout.setVisibility(isExpanded ? View.VISIBLE : View.GONE);
+
+            // Check if this item is selected
             if (position == selectedPhotoPosition) {
                 holder.itemView.setBackgroundColor(getResources().getColor(android.R.color.holo_blue_light));
             } else {
                 holder.itemView.setBackgroundColor(getResources().getColor(android.R.color.transparent));
             }
 
-            // Handle long click for selection for move functionality
+            // Set click listener to show/hide the action buttons
+            holder.itemView.setOnClickListener(v -> {
+                // Set the current photo in Data
+                Data.setCurrentPhoto(photo);
+
+                // Update expandedPosition
+                int oldExpandedPosition = expandedPosition;
+                expandedPosition = isExpanded ? -1 : position;
+
+                // Notify item changes to refresh the view
+                if (oldExpandedPosition >= 0) {
+                    notifyItemChanged(oldExpandedPosition);
+                }
+                notifyItemChanged(position);
+            });
+
+            // Set long click behavior (can be used for selection for other features)
             holder.itemView.setOnLongClickListener(v -> {
                 selectedPhotoPosition = position;
-                photoAdapter.notifyDataSetChanged(); // Update all items to refresh the selected state
+                notifyDataSetChanged(); // Update all items to refresh the selected state
                 Toast.makeText(PhotoGalleryActivity.this,
-                        "Selected " + photo.getCaption() + " for move",
+                        "Selected " + photo.getCaption(),
                         Toast.LENGTH_SHORT).show();
                 return true;
             });
 
-            // Launch PhotoDetailActivity when a photo is clicked normally
-            holder.itemView.setOnClickListener(v -> {
-                // Set the current photo in Data before opening details
-                Data.setCurrentPhoto(photo);
-
+            // Set up action buttons
+            holder.displayButton.setOnClickListener(v -> {
+                // Launch PhotoDetailActivity
                 Intent intent = new Intent(PhotoGalleryActivity.this, PhotoDetailActivity.class);
                 intent.putExtra("PHOTO_LIST", (Serializable) photos);
                 intent.putExtra("PHOTO_INDEX", position);
                 startActivity(intent);
+            });
+
+            holder.moveButton.setOnClickListener(v -> {
+                // Set the selected position and show the move dialog
+                selectedPhotoPosition = position;
+                showMovePhotoDialog();
             });
         }
 
@@ -309,11 +380,17 @@ public class PhotoGalleryActivity extends AppCompatActivity {
         class PhotoViewHolder extends RecyclerView.ViewHolder {
             ImageView photoImageView;
             TextView photoNameTextView;
+            LinearLayout actionButtonsLayout;
+            Button displayButton;
+            Button moveButton;
 
             public PhotoViewHolder(@NonNull View itemView) {
                 super(itemView);
                 photoImageView = itemView.findViewById(R.id.photo_image);
                 photoNameTextView = itemView.findViewById(R.id.photo_name);
+                actionButtonsLayout = itemView.findViewById(R.id.action_buttons_layout);
+                displayButton = itemView.findViewById(R.id.display_button);
+                moveButton = itemView.findViewById(R.id.move_button);
             }
         }
     }

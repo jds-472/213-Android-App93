@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.util.Log;
 
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.Serializable;
 import java.util.HashSet;
@@ -75,33 +76,72 @@ public class Photo implements Serializable {
      */
     public Bitmap getFullImage(Context context) {
         if (fullImage == null || fullImage.isRecycled()) {
+            Log.d(TAG, "Loading image from path: " + pathName);
+
             try {
                 // Try first as a resource ID
-                int resourceId = Integer.parseInt(pathName);
-                fullImage = BitmapFactory.decodeResource(context.getResources(), resourceId);
-                if (fullImage == null) {
-                    Log.e(TAG, "Failed to decode resource with ID: " + resourceId);
-                }
-            } catch (NumberFormatException nfe) {
-                // Not a resource ID, try URI or drawable path
                 try {
-                    if (pathName.startsWith("/drawable/")) {
-                        String resourceName = pathName.substring("/drawable/".length());
-                        int resourceId = context.getResources().getIdentifier(
-                                resourceName, "drawable", context.getPackageName());
-                        if (resourceId != 0) {
-                            fullImage = BitmapFactory.decodeResource(context.getResources(), resourceId);
-                        } else {
-                            Log.e(TAG, "Resource not found: " + resourceName);
+                    int resourceId = Integer.parseInt(pathName);
+                    fullImage = BitmapFactory.decodeResource(context.getResources(), resourceId);
+                    if (fullImage != null) {
+                        Log.d(TAG, "Successfully loaded image from resource ID: " + resourceId);
+                        return fullImage;
+                    } else {
+                        Log.e(TAG, "Failed to decode resource with ID: " + resourceId);
+                    }
+                } catch (NumberFormatException nfe) {
+                    // Not a resource ID, continue to next method
+                    Log.d(TAG, "Not a resource ID, trying other methods");
+                }
+
+                // Try to load from drawable directory
+                if (pathName.startsWith("/drawable/")) {
+                    String resourceName = pathName.substring("/drawable/".length());
+                    int resourceId = context.getResources().getIdentifier(
+                            resourceName, "drawable", context.getPackageName());
+                    if (resourceId != 0) {
+                        fullImage = BitmapFactory.decodeResource(context.getResources(), resourceId);
+                        if (fullImage != null) {
+                            Log.d(TAG, "Successfully loaded image from drawable: " + resourceName);
+                            return fullImage;
                         }
                     } else {
-                        // Try as URI
-                        Uri uri = Uri.parse(pathName);
-                        fullImage = BitmapFactory.decodeStream(context.getContentResolver().openInputStream(uri));
+                        Log.e(TAG, "Resource not found: " + resourceName);
+                    }
+                }
+
+                // Try as direct file path from storage
+                File imageFile = new File(pathName);
+                if (imageFile.exists() && imageFile.canRead()) {
+                    fullImage = BitmapFactory.decodeFile(pathName);
+                    if (fullImage != null) {
+                        Log.d(TAG, "Successfully loaded image from file path");
+                        return fullImage;
+                    } else {
+                        Log.e(TAG, "Failed to decode file from path: " + pathName);
+                    }
+                } else {
+                    Log.d(TAG, "File does not exist or cannot be read: " + pathName);
+                }
+
+                // Try as URI
+                try {
+                    Uri uri = Uri.parse(pathName);
+                    fullImage = BitmapFactory.decodeStream(context.getContentResolver().openInputStream(uri));
+                    if (fullImage != null) {
+                        Log.d(TAG, "Successfully loaded image from URI");
+                        return fullImage;
                     }
                 } catch (Exception e) {
-                    Log.e(TAG, "Error loading image: " + e.getMessage(), e);
+                    Log.e(TAG, "Error loading image from URI: " + e.getMessage());
                 }
+
+                // If all else fails, set a placeholder
+                Log.e(TAG, "Could not load image from any method. Using placeholder.");
+                fullImage = null;
+            } catch (Exception e) {
+                Log.e(TAG, "General error loading image: " + e.getMessage(), e);
+                fullImage = null;
             }
         }
         return fullImage;
@@ -118,9 +158,15 @@ public class Photo implements Serializable {
             Bitmap original = getFullImage(context);
             if (original != null) {
                 thumbnailImage = Bitmap.createScaledBitmap(original, THUMBNAIL_SIZE, THUMBNAIL_SIZE, true);
+                Log.d(TAG, "Created thumbnail for " + caption);
+            } else {
+                Log.e(TAG, "Cannot create thumbnail: original image is null");
+                return null;
             }
         }
-        else {System.out.println("Thumbnail already exists");}
+        else {
+            Log.d(TAG, "Using existing thumbnail for " + caption);
+        }
         return thumbnailImage;
     }
 

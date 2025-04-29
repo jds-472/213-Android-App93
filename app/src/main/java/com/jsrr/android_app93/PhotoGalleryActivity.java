@@ -1,8 +1,16 @@
 package com.jsrr.android_app93;
 
 import android.app.AlertDialog;
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
@@ -10,6 +18,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
@@ -17,23 +26,39 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.FileProvider;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.Serializable;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 public class PhotoGalleryActivity extends AppCompatActivity {
 
     private static final String TAG = "PhotoGalleryActivity";
+    private static final int REQUEST_IMAGE_GALLERY = 101;
+
     private RecyclerView photoRecyclerView;
     private PhotoAdapter photoAdapter;
     private List<Photo> photoList;
     private String albumName;
     private Album currentAlbum;
+    private FloatingActionButton addPhotoFab;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,6 +90,10 @@ public class PhotoGalleryActivity extends AppCompatActivity {
         photoRecyclerView = findViewById(R.id.photo_recycler_view);
         photoRecyclerView.setLayoutManager(new GridLayoutManager(this, 2)); // 2 columns
 
+        // Initialize Add Photo FAB
+        addPhotoFab = findViewById(R.id.add_photo_fab);
+        addPhotoFab.setOnClickListener(v -> openGallery());
+
         // Check if the album has photos, if not initialize with defaults
         if (currentAlbum != null && currentAlbum.getPhotos().size() > 0) {
             photoList = new ArrayList<>(currentAlbum.getPhotos());
@@ -78,6 +107,221 @@ public class PhotoGalleryActivity extends AppCompatActivity {
 
         // Log that we've set up the recycler view
         Log.d(TAG, "RecyclerView initialized with " + photoList.size() + " photos");
+    }
+
+    /**
+     * Open the gallery to select an image
+     */
+    private void openGallery() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        startActivityForResult(intent, REQUEST_IMAGE_GALLERY);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == REQUEST_IMAGE_GALLERY && resultCode == RESULT_OK && data != null) {
+            Uri selectedImageUri = data.getData();
+            if (selectedImageUri != null) {
+                showAddPhotoDialog(selectedImageUri);
+            }
+        }
+    }
+
+    /**
+     * Show dialog to enter caption for the new photo
+     */
+    private void showAddPhotoDialog(Uri imageUri) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_add_photo, null);
+        EditText captionEditText = dialogView.findViewById(R.id.caption_edit_text);
+        ImageView previewImageView = dialogView.findViewById(R.id.preview_image_view);
+
+        // Load a preview of the selected image
+        try {
+            Bitmap previewBitmap = getBitmapFromUri(imageUri);
+            if (previewBitmap != null) {
+                previewImageView.setImageBitmap(previewBitmap);
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Error loading preview image: " + e.getMessage());
+            previewImageView.setImageResource(android.R.drawable.ic_menu_gallery);
+        }
+
+        builder.setView(dialogView)
+                .setTitle("Add New Photo")
+                .setPositiveButton("Add", (dialog, which) -> {
+                    String caption = captionEditText.getText().toString();
+                    if (caption.isEmpty()) {
+                        caption = "Photo " + (photoList.size() + 1);
+                    }
+                    savePhotoToAlbum(imageUri, caption);
+                })
+                .setNegativeButton("Cancel", null);
+
+        builder.create().show();
+    }
+
+    /**
+     * Get bitmap from Uri
+     */
+    private Bitmap getBitmapFromUri(Uri uri) throws IOException {
+        InputStream inputStream = getContentResolver().openInputStream(uri);
+        return BitmapFactory.decodeStream(inputStream);
+    }
+
+    /**
+     * Save the selected photo to the album and device gallery
+     */
+    private void savePhotoToAlbum(Uri imageUri, String caption) {
+        try {
+            // Create a file to save the image in app's private storage
+            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+            String imageFileName = "JPEG_" + timeStamp + "_";
+            File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
+            File imageFile = File.createTempFile(imageFileName, ".jpg", storageDir);
+
+            // Take persistent permission for this URI
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                try {
+                    getContentResolver().takePersistableUriPermission(
+                            imageUri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    );
+                    Log.d(TAG, "Taken persistable URI permission for: " + imageUri);
+                } catch (SecurityException se) {
+                    Log.e(TAG, "Failed to take persistable URI permission: " + se.getMessage());
+                    // Continue anyway as we're copying the file
+                }
+            }
+
+            // Copy the image to our app's storage
+            InputStream inputStream = getContentResolver().openInputStream(imageUri);
+            FileOutputStream outputStream = new FileOutputStream(imageFile);
+
+            if (inputStream == null) {
+                throw new IOException("Failed to open input stream for URI: " + imageUri);
+            }
+
+            Log.d(TAG, "Copying image from URI to file: " + imageFile.getAbsolutePath());
+
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, bytesRead);
+            }
+
+            inputStream.close();
+            outputStream.close();
+
+            Log.d(TAG, "Image copied successfully");
+
+            // Create a new Photo object with the image file path
+            Photo newPhoto = new Photo(caption, imageFile.getAbsolutePath());
+            Log.d(TAG, "Created new Photo with path: " + imageFile.getAbsolutePath());
+
+            // Add to current album
+            if (currentAlbum != null) {
+                currentAlbum.addPhoto(newPhoto);
+                Log.d(TAG, "Added photo to album: " + currentAlbum.getName());
+            } else {
+                Log.e(TAG, "Current album is null, cannot add photo");
+            }
+
+            // Add to the display list
+            photoList.add(newPhoto);
+            photoAdapter.notifyItemInserted(photoList.size() - 1);
+
+            // Save data
+            Data.saveData(this);
+
+            // Save to MediaStore for Android 10+ (using scoped storage approach)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                saveToMediaStoreQ(imageFile, caption);
+            } else {
+                saveToMediaStore(imageFile, caption);
+            }
+
+            Toast.makeText(this, "Photo added successfully", Toast.LENGTH_SHORT).show();
+
+        } catch (IOException e) {
+            Log.e(TAG, "Error saving photo: " + e.getMessage(), e);
+            Toast.makeText(this, "Failed to save photo: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * Save the image to the MediaStore (public gallery) for Android 9 and below
+     */
+    private void saveToMediaStore(File imageFile, String caption) {
+        try {
+            // Insert the new image into the MediaStore
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Images.Media.TITLE, caption);
+            values.put(MediaStore.Images.Media.DISPLAY_NAME, imageFile.getName());
+            values.put(MediaStore.Images.Media.DESCRIPTION, "Photo from " + getString(R.string.app_name));
+            values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+            values.put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000);
+            values.put(MediaStore.Images.Media.DATE_TAKEN, System.currentTimeMillis());
+            values.put(MediaStore.Images.Media.DATA, imageFile.getAbsolutePath());
+
+            getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+            Log.d(TAG, "Image saved to MediaStore using legacy method");
+        } catch (Exception e) {
+            Log.e(TAG, "Error saving to media store: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Save the image to the MediaStore (public gallery) for Android 10 and above using Scoped Storage
+     */
+    private void saveToMediaStoreQ(File imageFile, String caption) {
+        try {
+            ContentResolver resolver = getContentResolver();
+            ContentValues contentValues = new ContentValues();
+            contentValues.put(MediaStore.MediaColumns.DISPLAY_NAME, imageFile.getName());
+            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg");
+            contentValues.put(MediaStore.MediaColumns.TITLE, caption);
+            contentValues.put(MediaStore.Images.Media.DESCRIPTION, "Photo from " + getString(R.string.app_name));
+            contentValues.put(MediaStore.Images.Media.DATE_TAKEN, System.currentTimeMillis());
+
+            // For Android 10+, use the new RELATIVE_PATH field
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentValues.put(
+                        MediaStore.Images.Media.RELATIVE_PATH,
+                        Environment.DIRECTORY_PICTURES + File.separator + getString(R.string.app_name)
+                );
+                contentValues.put(MediaStore.Images.Media.IS_PENDING, 1);
+            }
+
+            Uri uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues);
+
+            if (uri != null) {
+                try (FileInputStream is = new FileInputStream(imageFile);
+                     OutputStream os = resolver.openOutputStream(uri)) {
+
+                    byte[] buffer = new byte[1024];
+                    int bytesRead;
+                    while ((bytesRead = is.read(buffer)) != -1) {
+                        os.write(buffer, 0, bytesRead);
+                    }
+                }
+
+                // For Android 10+, clear the IS_PENDING flag
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    contentValues.clear();
+                    contentValues.put(MediaStore.Images.Media.IS_PENDING, 0);
+                    resolver.update(uri, contentValues, null, null);
+                }
+
+                Log.d(TAG, "Image saved to MediaStore using Scoped Storage");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error saving to MediaStore (Q): " + e.getMessage());
+        }
     }
 
     /**
@@ -147,7 +391,7 @@ public class PhotoGalleryActivity extends AppCompatActivity {
 
                         if (isDuplicate) {
                             // Alert the user that the photo already exists in the destination album
-                            Toast.makeText(this, "Photo already exists in " +
+                            Toast.makeText(PhotoGalleryActivity.this, "Photo already exists in " +
                                             destinationAlbum.getName() + ". Move cancelled.",
                                     Toast.LENGTH_LONG).show();
                             return;
@@ -164,10 +408,10 @@ public class PhotoGalleryActivity extends AppCompatActivity {
                         photoAdapter.expandedPosition = -1;
 
                         // Show confirmation
-                        Toast.makeText(this, "Photo moved to " + destinationAlbum.getName(),
+                        Toast.makeText(PhotoGalleryActivity.this, "Photo moved to " + destinationAlbum.getName(),
                                 Toast.LENGTH_SHORT).show();
                     } else {
-                        Toast.makeText(this, "No album selected", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(PhotoGalleryActivity.this, "No album selected", Toast.LENGTH_SHORT).show();
                     }
                 })
                 .setNegativeButton("Cancel", null);

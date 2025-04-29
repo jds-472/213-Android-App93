@@ -31,6 +31,7 @@ public class MainActivity extends AppCompatActivity {
     private Button createAlbumButton;
     private Button deleteAlbumButton;
     private Button renameAlbumButton;
+    private Button searchButton; // New search button
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -45,11 +46,13 @@ public class MainActivity extends AppCompatActivity {
         createAlbumButton = findViewById(R.id.create_album_button);
         deleteAlbumButton = findViewById(R.id.delete_album_button);
         renameAlbumButton = findViewById(R.id.rename_album_button);
+        searchButton = findViewById(R.id.search_button); // Initialize search button
 
         // Set up button click listeners
         createAlbumButton.setOnClickListener(v -> showCreateAlbumDialog());
         deleteAlbumButton.setOnClickListener(v -> showDeleteAlbumDialog());
         renameAlbumButton.setOnClickListener(v -> showRenameAlbumDialog());
+        searchButton.setOnClickListener(v -> openSearchActivity()); // Add click listener for search button
 
         // Load data or initialize default albums if none exist
         Data.loadData(this);
@@ -59,6 +62,12 @@ public class MainActivity extends AppCompatActivity {
 
         // Convert Set to List for the adapter
         refreshAlbumList();
+    }
+
+    // Method to open the search activity
+    private void openSearchActivity() {
+        Intent intent = new Intent(MainActivity.this, SearchActivity.class);
+        startActivity(intent);
     }
 
     private void refreshAlbumList() {

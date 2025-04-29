@@ -35,6 +35,15 @@
                 android:value=".PhotoGalleryActivity" />
         </activity>
 
+        <activity
+            android:name=".SearchActivity"
+            android:parentActivityName=".MainActivity">
+            <!-- For backward compatibility -->
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".MainActivity" />
+        </activity>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

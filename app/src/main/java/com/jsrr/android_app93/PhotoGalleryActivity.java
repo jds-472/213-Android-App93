@@ -176,17 +176,20 @@ public class PhotoGalleryActivity extends AppCompatActivity {
     /**
      * Save the selected photo to the album and device gallery
      */
+// Modified savePhotoToAlbum method for PhotoGalleryActivity.java
+// This version stores a reference to the original photo URI instead of making a copy
+
+    /**
+     * Save a reference to the selected photo to the album without duplicating it
+     */
     private void savePhotoToAlbum(Uri imageUri, String caption) {
         try {
-            // Create a file to save the image in app's private storage
-            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-            String imageFileName = "JPEG_" + timeStamp + "_";
-            File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
-            File imageFile = File.createTempFile(imageFileName, ".jpg", storageDir);
+            Log.d(TAG, "Creating reference to photo URI: " + imageUri);
 
             // Take persistent permission for this URI
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                 try {
+                    // Request persistent read permission for the URI
                     getContentResolver().takePersistableUriPermission(
                             imageUri,
                             Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -194,34 +197,16 @@ public class PhotoGalleryActivity extends AppCompatActivity {
                     Log.d(TAG, "Taken persistable URI permission for: " + imageUri);
                 } catch (SecurityException se) {
                     Log.e(TAG, "Failed to take persistable URI permission: " + se.getMessage());
-                    // Continue anyway as we're copying the file
+                    Toast.makeText(this, "Unable to access this photo permanently", Toast.LENGTH_LONG).show();
+                    return;
                 }
             }
 
-            // Copy the image to our app's storage
-            InputStream inputStream = getContentResolver().openInputStream(imageUri);
-            FileOutputStream outputStream = new FileOutputStream(imageFile);
-
-            if (inputStream == null) {
-                throw new IOException("Failed to open input stream for URI: " + imageUri);
-            }
-
-            Log.d(TAG, "Copying image from URI to file: " + imageFile.getAbsolutePath());
-
-            byte[] buffer = new byte[1024];
-            int bytesRead;
-            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, bytesRead);
-            }
-
-            inputStream.close();
-            outputStream.close();
-
-            Log.d(TAG, "Image copied successfully");
-
-            // Create a new Photo object with the image file path
-            Photo newPhoto = new Photo(caption, imageFile.getAbsolutePath());
-            Log.d(TAG, "Created new Photo with path: " + imageFile.getAbsolutePath());
+            // Create a new Photo object with the original URI
+            // Convert URI to string for storage
+            String uriString = imageUri.toString();
+            Photo newPhoto = new Photo(caption, uriString);
+            Log.d(TAG, "Created new Photo with URI: " + uriString);
 
             // Add to current album
             if (currentAlbum != null) {
@@ -238,18 +223,11 @@ public class PhotoGalleryActivity extends AppCompatActivity {
             // Save data
             Data.saveData(this);
 
-            // Save to MediaStore for Android 10+ (using scoped storage approach)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                saveToMediaStoreQ(imageFile, caption);
-            } else {
-                saveToMediaStore(imageFile, caption);
-            }
-
             Toast.makeText(this, "Photo added successfully", Toast.LENGTH_SHORT).show();
 
-        } catch (IOException e) {
-            Log.e(TAG, "Error saving photo: " + e.getMessage(), e);
-            Toast.makeText(this, "Failed to save photo: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Log.e(TAG, "Error saving photo reference: " + e.getMessage(), e);
+            Toast.makeText(this, "Failed to add photo: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 

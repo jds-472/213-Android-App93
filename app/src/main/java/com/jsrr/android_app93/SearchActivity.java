@@ -238,4 +238,5 @@ public class SearchActivity extends AppCompatActivity {
             }
         }
     }
+    //i was wrong
 }

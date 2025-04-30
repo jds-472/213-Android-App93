@@ -88,6 +88,32 @@ public class SearchActivity extends AppCompatActivity {
                 searchPhotos(s.toString());
             }
         });
+
+        // Set up second search text listener
+        secondSearchEditText.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                // Not needed
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                // Not needed
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                // Only trigger search if not in "NEITHER" mode
+                if (logicalOperatorGroup.getCheckedRadioButtonId() != R.id.neither_radio) {
+                    searchPhotos(searchEditText.getText().toString());
+                }
+            }
+        });
+
+        // Setup radio group listener to update search when changing operators
+        logicalOperatorGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            searchPhotos(searchEditText.getText().toString());
+        });
     }
 
     private void setupTagTypeSpinner(Spinner spinner) {
@@ -104,7 +130,10 @@ public class SearchActivity extends AppCompatActivity {
         String secondaryQuery = secondSearchEditText.getText().toString().toLowerCase().trim();
         String secondTagType = secondTagTypeSpinner.getSelectedItem().toString();
 
-        boolean isAndSearch = logicalOperatorGroup.getCheckedRadioButtonId() == R.id.and_radio;
+        int selectedRadioButtonId = logicalOperatorGroup.getCheckedRadioButtonId();
+        boolean isAndSearch = selectedRadioButtonId == R.id.and_radio;
+        boolean isOrSearch = selectedRadioButtonId == R.id.or_radio;
+        boolean isNeitherSearch = selectedRadioButtonId == R.id.neither_radio;
 
         String primaryTagType = selectedTagType;
         String primaryQueryLower = primaryQuery.toLowerCase().trim();
@@ -116,11 +145,21 @@ public class SearchActivity extends AppCompatActivity {
                 boolean matchesPrimary = hasMatchingTag(photo, primaryTagType, primaryQueryLower);
                 boolean matchesSecondary = hasMatchingTag(photo, secondTagType, secondaryQuery);
 
-                if ((isAndSearch && matchesPrimary && matchesSecondary) ||
-                        (!isAndSearch && (matchesPrimary || matchesSecondary))) {
-                    if (!searchResults.contains(photo)) {
-                        searchResults.add(photo);
-                    }
+                boolean shouldInclude = false;
+
+                if (isNeitherSearch) {
+                    // Only consider the primary query
+                    shouldInclude = matchesPrimary;
+                } else if (isAndSearch) {
+                    // Must match both queries
+                    shouldInclude = matchesPrimary && matchesSecondary;
+                } else if (isOrSearch) {
+                    // Must match at least one query
+                    shouldInclude = matchesPrimary || matchesSecondary;
+                }
+
+                if (shouldInclude && !searchResults.contains(photo)) {
+                    searchResults.add(photo);
                 }
             }
         }
@@ -137,6 +176,10 @@ public class SearchActivity extends AppCompatActivity {
     }
 
     private boolean hasMatchingTag(Photo photo, String tagType, String query) {
+        if (query.isEmpty()) {
+            return false; // Don't match empty queries
+        }
+
         for (Tag tag : photo.getTags()) {
             if (tag.getName().equalsIgnoreCase(tagType) &&
                     tag.getValue().toLowerCase().startsWith(query)) {

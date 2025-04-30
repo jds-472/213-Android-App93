@@ -37,7 +37,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Logical Operator (AND / OR) -->
+    <!-- Logical Operator (NEITHER / AND / OR) -->
     <RadioGroup
         android:id="@+id/logical_operator_group"
         android:layout_width="wrap_content"
@@ -49,14 +49,23 @@
         app:layout_constraintEnd_toEndOf="parent">
 
         <RadioButton
+            android:id="@+id/neither_radio"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="NEITHER"
+            android:checked="true" />
+
+        <RadioButton
             android:id="@+id/and_radio"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
             android:paddingTop="8dp"
             android:paddingBottom="8dp"
-            android:text="AND"
-            android:checked="true" />
+            android:text="AND" />
 
         <RadioButton
             android:id="@+id/or_radio"

@@ -15,6 +15,7 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.Spinner;
 import android.widget.TextView;
+import android.widget.RadioGroup;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.ActionBar;
@@ -36,6 +37,9 @@ public class SearchActivity extends AppCompatActivity {
     private List<Photo> searchResults;
     private Spinner tagTypeSpinner;
     private String selectedTagType = "Location"; // Default selection
+    private EditText secondSearchEditText;
+    private Spinner secondTagTypeSpinner;
+    private RadioGroup logicalOperatorGroup;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,12 +54,16 @@ public class SearchActivity extends AppCompatActivity {
         }
 
         // Initialize UI components
+        secondSearchEditText = findViewById(R.id.second_search_edit_text);
+        secondTagTypeSpinner = findViewById(R.id.second_tag_type_spinner);
+        logicalOperatorGroup = findViewById(R.id.logical_operator_group);
         searchEditText = findViewById(R.id.search_edit_text);
         resultsRecyclerView = findViewById(R.id.search_results_recycler_view);
         tagTypeSpinner = findViewById(R.id.tag_type_spinner);
 
         // Set up tag type spinner
-        setupTagTypeSpinner();
+        setupTagTypeSpinner(tagTypeSpinner);
+        setupTagTypeSpinner(secondTagTypeSpinner);
 
         // Set up RecyclerView
         resultsRecyclerView.setLayoutManager(new GridLayoutManager(this, 3));
@@ -82,71 +90,42 @@ public class SearchActivity extends AppCompatActivity {
         });
     }
 
-    private void setupTagTypeSpinner() {
-        // Create an ArrayAdapter using a simple spinner layout and the tag types
-        ArrayAdapter<String> tagTypesAdapter = new ArrayAdapter<>(
-                this, R.layout.spinner_item,
-                new String[]{"Location", "Person"});
-
-        // Specify the layout to use when the list of choices appears
-        tagTypesAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
-
-        // Apply the adapter to the spinner
-        tagTypeSpinner.setAdapter(tagTypesAdapter);
-
-        // Set up listener for when an item is selected
-        tagTypeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                selectedTagType = parent.getItemAtPosition(position).toString();
-                // Re-run the search with current filter
-                searchPhotos(searchEditText.getText().toString());
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-                // Do nothing
-            }
-        });
+    private void setupTagTypeSpinner(Spinner spinner) {
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                this,
+                R.layout.spinner_item,
+                new String[]{"Location", "Person"}
+        );
+        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
+        spinner.setAdapter(adapter);
     }
 
-    private void searchPhotos(String query) {
-        if (query.isEmpty()) {
-            // If the query is empty, show all tags of the selected type
-            query = "";
-        }
+    private void searchPhotos(String primaryQuery) {
+        String secondaryQuery = secondSearchEditText.getText().toString().toLowerCase().trim();
+        String secondTagType = secondTagTypeSpinner.getSelectedItem().toString();
 
-        // Convert query to lowercase for case-insensitive search
-        String lowercaseQuery = query.toLowerCase().trim();
+        boolean isAndSearch = logicalOperatorGroup.getCheckedRadioButtonId() == R.id.and_radio;
 
-        // Clear previous results
+        String primaryTagType = selectedTagType;
+        String primaryQueryLower = primaryQuery.toLowerCase().trim();
+
         searchResults.clear();
 
-        // Get all albums
-        Set<Album> albums = Data.getAlbums();
-
-        // Search through all albums for photos with matching tags
-        for (Album album : albums) {
+        for (Album album : Data.getAlbums()) {
             for (Photo photo : album.getPhotos()) {
-                Set<Tag> tags = photo.getTags();
+                boolean matchesPrimary = hasMatchingTag(photo, primaryTagType, primaryQueryLower);
+                boolean matchesSecondary = hasMatchingTag(photo, secondTagType, secondaryQuery);
 
-                // Check if any tag contains the search query and matches the selected tag type
-                for (Tag tag : tags) {
-                    if (matchesTagTypeAndQuery(tag, lowercaseQuery)) {
-                        // Add photo to search results if it's not already there
-                        if (!searchResults.contains(photo)) {
-                            searchResults.add(photo);
-                        }
-                        break;  // Break once we've found a match
+                if ((isAndSearch && matchesPrimary && matchesSecondary) ||
+                        (!isAndSearch && (matchesPrimary || matchesSecondary))) {
+                    if (!searchResults.contains(photo)) {
+                        searchResults.add(photo);
                     }
                 }
             }
         }
 
-        // Update the adapter
         searchResultsAdapter.notifyDataSetChanged();
-
-        // Show or hide the "No results found" message
         TextView emptyResultsText = findViewById(R.id.empty_results_text);
         if (searchResults.isEmpty()) {
             emptyResultsText.setVisibility(View.VISIBLE);
@@ -155,6 +134,16 @@ public class SearchActivity extends AppCompatActivity {
             emptyResultsText.setVisibility(View.GONE);
             resultsRecyclerView.setVisibility(View.VISIBLE);
         }
+    }
+
+    private boolean hasMatchingTag(Photo photo, String tagType, String query) {
+        for (Tag tag : photo.getTags()) {
+            if (tag.getName().equalsIgnoreCase(tagType) &&
+                    tag.getValue().toLowerCase().startsWith(query)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean matchesTagTypeAndQuery(Tag tag, String query) {
@@ -238,5 +227,4 @@ public class SearchActivity extends AppCompatActivity {
             }
         }
     }
-    //i was wrong
 }

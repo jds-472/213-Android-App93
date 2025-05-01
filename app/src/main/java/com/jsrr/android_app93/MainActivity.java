@@ -54,12 +54,8 @@ public class MainActivity extends AppCompatActivity {
         renameAlbumButton.setOnClickListener(v -> showRenameAlbumDialog());
         searchButton.setOnClickListener(v -> openSearchActivity()); // Add click listener for search button
 
-        // Load data or initialize default albums if none exist
+        // Load data or initialize
         Data.loadData(this);
-        if (Data.getAlbums().isEmpty()) {
-            initializeDefaultAlbums();
-        }
-
         // Convert Set to List for the adapter
         refreshAlbumList();
     }
@@ -75,27 +71,6 @@ public class MainActivity extends AppCompatActivity {
         // Set up the adapter
         albumAdapter = new AlbumAdapter(albumList);
         albumRecyclerView.setAdapter(albumAdapter);
-    }
-
-    private void initializeDefaultAlbums() {
-        // Create default album list
-        List<Album> defaultAlbums = new ArrayList<>(Arrays.asList(
-                new Album("The Dark Side of the Moon"),
-                new Album("Abbey Road"),
-                new Album("Thriller"),
-                new Album("Rumours"),
-                new Album("Back in Black"),
-                new Album("Nevermind"),
-                new Album("OK Computer"),
-                new Album("The Joshua Tree"),
-                new Album("Purple Rain"),
-                new Album("Random Access Memories")
-        ));
-
-        // Add all default albums to Data
-        for (Album album : defaultAlbums) {
-            Data.addAlbum(album);
-        }
     }
 
     private void showCreateAlbumDialog() {

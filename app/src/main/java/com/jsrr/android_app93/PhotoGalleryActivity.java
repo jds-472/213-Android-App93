@@ -98,7 +98,7 @@ public class PhotoGalleryActivity extends AppCompatActivity {
         if (currentAlbum != null && currentAlbum.getPhotos().size() > 0) {
             photoList = new ArrayList<>(currentAlbum.getPhotos());
         } else {
-            initializeDefaultPhotos();
+            photoList = new ArrayList<>();
         }
 
         // Set up the adapter
@@ -507,36 +507,6 @@ public class PhotoGalleryActivity extends AppCompatActivity {
             return true;
         }
         return super.onOptionsItemSelected(item);
-    }
-
-    private void initializeDefaultPhotos() {
-        photoList = new ArrayList<>();
-
-        // Add default photos with proper drawable paths
-        photoList.add(new Photo("Pac-Man", String.valueOf(R.drawable.pacmanstock)));
-        photoList.add(new Photo("Blinky", String.valueOf(R.drawable.blinkystock)));
-        photoList.add(new Photo("Pinky", String.valueOf(R.drawable.pinkystock)));
-        photoList.add(new Photo("Inky", String.valueOf(R.drawable.inkystock)));
-        photoList.add(new Photo("Clyde", String.valueOf(R.drawable.clydestock)));
-
-        // Add some sample tags to demonstrate tag functionality
-        Photo pacman = photoList.get(0);
-        pacman.addTag(new Tag("Person", "Pac-Man"));
-        pacman.addTag(new Tag("Location", "Maze"));
-
-        Photo blinky = photoList.get(1);
-        blinky.addTag(new Tag("Person", "Ghost"));
-        blinky.addTag(new Tag("Location", "Maze"));
-
-        // If we have a valid album, add the photos to it
-        if (currentAlbum != null) {
-            for (Photo photo : photoList) {
-                currentAlbum.addPhoto(photo);
-            }
-        }
-
-        // Verify the photos were added
-        Log.d(TAG, "Added " + photoList.size() + " default photos");
     }
 
     @Override
